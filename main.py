@@ -12,8 +12,7 @@ def main():
     weather_adapter = WeatherApiAdapter(api_key=os.getenv("WEATHER_API_KEY"))
     app = ApplicationService(weather_port=weather_adapter)
 
-    print(app.run())
-    print(app.get_weather("London"))
+    app.run()
 
 
 
