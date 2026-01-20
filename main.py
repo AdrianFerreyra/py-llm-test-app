@@ -2,15 +2,18 @@ import os
 
 from dotenv import load_dotenv
 
+from src.adapters import WeatherApiAdapter
+from src.application import ApplicationService
+
 load_dotenv()
 
 
 def main():
-    openai_key = os.getenv("OPENAI_API_KEY")
+    weather_adapter = WeatherApiAdapter(api_key=os.getenv("WEATHER_API_KEY"))
+    app = ApplicationService(weather_port=weather_adapter)
 
-
-    print("Hello from py-llm-test-app!")
-    print(f"OpenAI API Key: {openai_key}")
+    print(app.run())
+    print(app.get_weather("London"))
 
 
 
