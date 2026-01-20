@@ -1,4 +1,5 @@
 from src.application import ApplicationService
+from src.application.dtos import LLMMessageResponseDTO, LLMResponseDTO
 from src.application.ports import InputPort, LLMPort, OutputPort
 
 
@@ -19,22 +20,24 @@ class FakeOutputAdapter(OutputPort):
 
 
 class FakeLLMAdapter(LLMPort):
-    def __init__(self, responses: dict[str, str]):
+    def __init__(self, responses: dict[str, LLMResponseDTO]):
         self.responses = responses
         self.calls: list[str] = []
 
-    def call(self, message: str) -> str:
+    def call(self, message: str) -> LLMResponseDTO:
         self.calls.append(message)
-        return self.responses.get(message, "I don't understand.")
+        return self.responses.get(
+            message, LLMMessageResponseDTO(message="I don't understand.")
+        )
 
 
 class TestApplicationServiceRun:
-    def test_run_calls_llm_port_with_user_input_and_outputs_response(self):
+    def test_run_calls_llm_port_with_user_input_and_outputs_message(self):
         fake_input = FakeInputAdapter(["Hello", "How are you?", "exit"])
         fake_output = FakeOutputAdapter()
         fake_llm = FakeLLMAdapter({
-            "Hello": "Hi there! How can I help you?",
-            "How are you?": "I'm doing well, thank you!",
+            "Hello": LLMMessageResponseDTO(message="Hi there! How can I help you?"),
+            "How are you?": LLMMessageResponseDTO(message="I'm doing well, thank you!"),
         })
         app = ApplicationService(
             input_port=fake_input,
@@ -52,7 +55,9 @@ class TestApplicationServiceRun:
     def test_run_exits_on_quit(self):
         fake_input = FakeInputAdapter(["Hello", "quit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter({"Hello": "Hi!"})
+        fake_llm = FakeLLMAdapter({
+            "Hello": LLMMessageResponseDTO(message="Hi!"),
+        })
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,
@@ -67,7 +72,9 @@ class TestApplicationServiceRun:
     def test_run_exits_on_q(self):
         fake_input = FakeInputAdapter(["Hello", "q"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter({"Hello": "Hi!"})
+        fake_llm = FakeLLMAdapter({
+            "Hello": LLMMessageResponseDTO(message="Hi!"),
+        })
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,

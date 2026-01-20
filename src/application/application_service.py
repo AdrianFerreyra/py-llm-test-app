@@ -1,3 +1,4 @@
+from src.application.dtos import LLMMessageResponseDTO
 from src.application.ports import InputPort, LLMPort, OutputPort, WeatherPort
 
 
@@ -23,4 +24,5 @@ class ApplicationService:
             if message in ("quit", "exit", "q"):
                 break
             response = self.llm_port.call(message)
-            self.output_port.write(response)
+            if isinstance(response, LLMMessageResponseDTO):
+                self.output_port.write(response.message)
