@@ -1,8 +1,5 @@
-from io import StringIO
-from unittest.mock import patch
-
 from src.application import ApplicationService
-from src.application.ports import InputPort
+from src.application.ports import InputPort, OutputPort
 
 
 class FakeInputAdapter(InputPort):
@@ -13,39 +10,41 @@ class FakeInputAdapter(InputPort):
         return next(self.inputs)
 
 
+class FakeOutputAdapter(OutputPort):
+    def __init__(self):
+        self.messages: list[str] = []
+
+    def write(self, message: str) -> None:
+        self.messages.append(message)
+
+
 class TestApplicationServiceRun:
     def test_run_reads_from_input_port_and_echoes_response(self):
         fake_input = FakeInputAdapter(["hello", "world", "exit"])
-        app = ApplicationService(input_port=fake_input)
+        fake_output = FakeOutputAdapter()
+        app = ApplicationService(input_port=fake_input, output_port=fake_output)
 
-        output_stream = StringIO()
-        with patch("sys.stdout", output_stream):
-            app.run()
+        app.run()
 
-        output = output_stream.getvalue()
-        assert "hello" in output
-        assert "world" in output
+        assert "hello" in fake_output.messages
+        assert "world" in fake_output.messages
 
     def test_run_exits_on_quit(self):
         fake_input = FakeInputAdapter(["hello", "quit"])
-        app = ApplicationService(input_port=fake_input)
+        fake_output = FakeOutputAdapter()
+        app = ApplicationService(input_port=fake_input, output_port=fake_output)
 
-        output_stream = StringIO()
-        with patch("sys.stdout", output_stream):
-            app.run()
+        app.run()
 
-        output = output_stream.getvalue()
-        assert "hello" in output
-        assert "quit" not in output
+        assert "hello" in fake_output.messages
+        assert "quit" not in fake_output.messages
 
     def test_run_exits_on_q(self):
         fake_input = FakeInputAdapter(["test", "q"])
-        app = ApplicationService(input_port=fake_input)
+        fake_output = FakeOutputAdapter()
+        app = ApplicationService(input_port=fake_input, output_port=fake_output)
 
-        output_stream = StringIO()
-        with patch("sys.stdout", output_stream):
-            app.run()
+        app.run()
 
-        output = output_stream.getvalue()
-        assert "test" in output
-        assert "q" not in output.split()
+        assert "test" in fake_output.messages
+        assert "q" not in fake_output.messages
