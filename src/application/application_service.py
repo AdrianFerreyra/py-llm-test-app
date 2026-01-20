@@ -1,4 +1,5 @@
 from src.application.ports import InputPort, OutputPort, WeatherPort
+from src.application.translators import weather_dto_to_info
 
 
 class ApplicationService:
@@ -20,5 +21,6 @@ class ApplicationService:
             location = user_input.rstrip()
             if location in ("quit", "exit", "q"):
                 break
-            weather_data = self.weather_port.get_weather(location)
-            self.output_port.write(weather_data)
+            weather_dto = self.weather_port.get_weather(location)
+            weather_info = weather_dto_to_info(weather_dto)
+            self.output_port.write(weather_info)
