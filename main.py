@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-from src.adapters import StdInInputAdapter, StdOutOutputAdapter, WeatherApiAdapter
+from src.infra import StdInInputAdapter, StdOutOutputAdapter, WeatherApiAdapter
 from src.application import ApplicationService
 
 load_dotenv()

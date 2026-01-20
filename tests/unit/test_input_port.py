@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from src.adapters import StdInInputAdapter
+from src.infra import StdInInputAdapter
 from src.application.ports import InputPort
 
 

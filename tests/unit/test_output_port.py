@@ -1,7 +1,7 @@
 from io import StringIO
 from unittest.mock import patch
 
-from src.adapters import StdOutOutputAdapter
+from src.infra import StdOutOutputAdapter
 from src.application.ports import OutputPort
 
 

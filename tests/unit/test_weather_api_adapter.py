@@ -1,6 +1,6 @@
 from unittest.mock import Mock, patch
 
-from src.adapters.weather_api_adapter import WeatherApiAdapter
+from src.infra.adapters.weather_api_adapter import WeatherApiAdapter
 
 
 class TestWeatherApiAdapter:
@@ -9,7 +9,7 @@ class TestWeatherApiAdapter:
         mock_response.text = "Sunny, 28°C"
         mock_response.raise_for_status = Mock()
 
-        with patch("src.adapters.weather_api_adapter.requests.get") as mock_get:
+        with patch("src.infra.adapters.weather_api_adapter.requests.get") as mock_get:
             mock_get.return_value = mock_response
 
             adapter = WeatherApiAdapter(api_key="test-api-key")
