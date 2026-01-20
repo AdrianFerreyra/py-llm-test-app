@@ -17,10 +17,8 @@ class ApplicationService:
             user_input = self.input_port.read()
             if not user_input:
                 break
-            message = user_input.rstrip()
-            if message in ("quit", "exit", "q"):
+            location = user_input.rstrip()
+            if location in ("quit", "exit", "q"):
                 break
-            self.output_port.write(message)
-
-    def get_weather(self, location: str) -> str:
-        return self.weather_port.get_weather(location)
+            weather_data = self.weather_port.get_weather(location)
+            self.output_port.write(weather_data)
