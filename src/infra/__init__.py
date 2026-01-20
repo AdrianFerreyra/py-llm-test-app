@@ -1,3 +1,3 @@
-from .adapters import StdInInputAdapter, StdOutOutputAdapter, WeatherApiAdapter
+from .adapters import OpenAILLMAdapter, StdInInputAdapter, StdOutOutputAdapter, WeatherApiAdapter
 
-__all__ = ["StdInInputAdapter", "StdOutOutputAdapter", "WeatherApiAdapter"]
+__all__ = ["OpenAILLMAdapter", "StdInInputAdapter", "StdOutOutputAdapter", "WeatherApiAdapter"]

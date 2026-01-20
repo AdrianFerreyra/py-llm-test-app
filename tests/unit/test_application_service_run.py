@@ -1,7 +1,5 @@
 from src.application import ApplicationService
-from src.application.dtos import WeatherDTO
-from src.application.ports import InputPort, OutputPort, WeatherPort
-from src.domain import WeatherInfo
+from src.application.ports import InputPort, LLMPort, OutputPort
 
 
 class FakeInputAdapter(InputPort):
@@ -14,95 +12,69 @@ class FakeInputAdapter(InputPort):
 
 class FakeOutputAdapter(OutputPort):
     def __init__(self):
-        self.messages: list = []
+        self.messages: list[str] = []
 
-    def write(self, message) -> None:
+    def write(self, message: str) -> None:
         self.messages.append(message)
 
 
-class FakeWeatherAdapter(WeatherPort):
-    def __init__(self, responses: dict[str, WeatherDTO]):
+class FakeLLMAdapter(LLMPort):
+    def __init__(self, responses: dict[str, str]):
         self.responses = responses
         self.calls: list[str] = []
 
-    def get_weather(self, location: str) -> WeatherDTO:
-        self.calls.append(location)
-        return self.responses[location]
-
-
-def make_weather_dto(condition: str, temp_c: float = 20.0) -> WeatherDTO:
-    return WeatherDTO(
-        temperature_c=temp_c,
-        temperature_f=68.0,
-        feels_like_c=19.0,
-        feels_like_f=66.0,
-        humidity=50,
-        pressure_mb=1015.0,
-        pressure_in=29.97,
-        condition=condition,
-        condition_icon="//icon.png",
-        wind_mph=10.0,
-        wind_kph=16.0,
-        wind_direction="N",
-        wind_degree=0,
-        visibility_km=10.0,
-        visibility_miles=6.0,
-        uv_index=1.0,
-        cloud_cover=0,
-        last_updated="2026-01-20 18:00",
-    )
+    def call(self, message: str) -> str:
+        self.calls.append(message)
+        return self.responses.get(message, "I don't understand.")
 
 
 class TestApplicationServiceRun:
-    def test_run_calls_weather_port_and_outputs_weather_info(self):
-        fake_input = FakeInputAdapter(["London", "Paris", "exit"])
+    def test_run_calls_llm_port_with_user_input_and_outputs_response(self):
+        fake_input = FakeInputAdapter(["Hello", "How are you?", "exit"])
         fake_output = FakeOutputAdapter()
-        fake_weather = FakeWeatherAdapter({
-            "London": make_weather_dto("Sunny", 10.0),
-            "Paris": make_weather_dto("Cloudy", 12.0),
+        fake_llm = FakeLLMAdapter({
+            "Hello": "Hi there! How can I help you?",
+            "How are you?": "I'm doing well, thank you!",
         })
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,
-            weather_port=fake_weather,
+            llm_port=fake_llm,
         )
 
         app.run()
 
-        assert fake_weather.calls == ["London", "Paris"]
+        assert fake_llm.calls == ["Hello", "How are you?"]
         assert len(fake_output.messages) == 2
-        assert isinstance(fake_output.messages[0], WeatherInfo)
-        assert fake_output.messages[0].condition == "Sunny"
-        assert fake_output.messages[0].temperature_c == 10.0
-        assert isinstance(fake_output.messages[1], WeatherInfo)
-        assert fake_output.messages[1].condition == "Cloudy"
+        assert fake_output.messages[0] == "Hi there! How can I help you?"
+        assert fake_output.messages[1] == "I'm doing well, thank you!"
 
     def test_run_exits_on_quit(self):
-        fake_input = FakeInputAdapter(["London", "quit"])
+        fake_input = FakeInputAdapter(["Hello", "quit"])
         fake_output = FakeOutputAdapter()
-        fake_weather = FakeWeatherAdapter({"London": make_weather_dto("Sunny")})
+        fake_llm = FakeLLMAdapter({"Hello": "Hi!"})
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,
-            weather_port=fake_weather,
+            llm_port=fake_llm,
         )
 
         app.run()
 
-        assert fake_weather.calls == ["London"]
+        assert fake_llm.calls == ["Hello"]
         assert len(fake_output.messages) == 1
 
     def test_run_exits_on_q(self):
-        fake_input = FakeInputAdapter(["Berlin", "q"])
+        fake_input = FakeInputAdapter(["Hello", "q"])
         fake_output = FakeOutputAdapter()
-        fake_weather = FakeWeatherAdapter({"Berlin": make_weather_dto("Rainy")})
+        fake_llm = FakeLLMAdapter({"Hello": "Hi!"})
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,
-            weather_port=fake_weather,
+            llm_port=fake_llm,
         )
 
         app.run()
 
-        assert fake_weather.calls == ["Berlin"]
+        assert fake_llm.calls == ["Hello"]
         assert len(fake_output.messages) == 1

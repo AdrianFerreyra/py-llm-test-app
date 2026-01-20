@@ -1,5 +1,4 @@
-from src.application.ports import InputPort, OutputPort, WeatherPort
-from src.application.translators import weather_dto_to_info
+from src.application.ports import InputPort, LLMPort, OutputPort, WeatherPort
 
 
 class ApplicationService:
@@ -7,10 +6,12 @@ class ApplicationService:
         self,
         input_port: InputPort | None = None,
         output_port: OutputPort | None = None,
+        llm_port: LLMPort | None = None,
         weather_port: WeatherPort | None = None,
     ):
         self.input_port = input_port
         self.output_port = output_port
+        self.llm_port = llm_port
         self.weather_port = weather_port
 
     def run(self) -> None:
@@ -18,9 +19,8 @@ class ApplicationService:
             user_input = self.input_port.read()
             if not user_input:
                 break
-            location = user_input.rstrip()
-            if location in ("quit", "exit", "q"):
+            message = user_input.rstrip()
+            if message in ("quit", "exit", "q"):
                 break
-            weather_dto = self.weather_port.get_weather(location)
-            weather_info = weather_dto_to_info(weather_dto)
-            self.output_port.write(weather_info)
+            response = self.llm_port.call(message)
+            self.output_port.write(response)
