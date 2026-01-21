@@ -13,6 +13,7 @@ class TestLLMResponseDTO:
 
     def test_llm_tool_call_response_dto_inherits_from_llm_response_dto(self):
         response = LLMToolCallResponseDTO(
+            call_id="call_123",
             function_name="get_weather",
             arguments={"location": "London"},
         )
@@ -28,20 +29,24 @@ class TestLLMMessageResponseDTO:
 
 
 class TestLLMToolCallResponseDTO:
-    def test_stores_function_name_and_arguments(self):
+    def test_stores_call_id_function_name_and_arguments(self):
         response = LLMToolCallResponseDTO(
+            call_id="call_abc123",
             function_name="get_weather",
             arguments={"location": "Paris", "unit": "celsius"},
         )
 
+        assert response.call_id == "call_abc123"
         assert response.function_name == "get_weather"
         assert response.arguments == {"location": "Paris", "unit": "celsius"}
 
     def test_arguments_can_be_empty(self):
         response = LLMToolCallResponseDTO(
+            call_id="call_xyz789",
             function_name="get_current_time",
             arguments={},
         )
 
+        assert response.call_id == "call_xyz789"
         assert response.function_name == "get_current_time"
         assert response.arguments == {}

@@ -1,5 +1,16 @@
-from src.application.dtos import LLMRequestDTO, LLMRequestMessageDTO
-from src.domain import Conversation, LLMMessage, LLMToolCallMessage, UserMessage
+from src.application.dtos import (
+    LLMRequestDTO,
+    LLMRequestMessageDTO,
+    LLMToolCallMessageDTO,
+    LLMToolCallOutputMessageDTO,
+)
+from src.domain import (
+    Conversation,
+    LLMMessage,
+    LLMToolCallMessage,
+    ToolCallOutputMessage,
+    UserMessage,
+)
 
 
 def conversation_to_llm_request(conversation: Conversation) -> LLMRequestDTO:
@@ -13,8 +24,17 @@ def conversation_to_llm_request(conversation: Conversation) -> LLMRequestDTO:
             )
         elif isinstance(message, LLMToolCallMessage):
             messages.append(
-                LLMRequestMessageDTO(
-                    role="assistant", content=f"Tool call: {message.function_name}"
+                LLMToolCallMessageDTO(
+                    call_id=message.call_id,
+                    function_name=message.function_name,
+                    arguments=message.arguments,
+                )
+            )
+        elif isinstance(message, ToolCallOutputMessage):
+            messages.append(
+                LLMToolCallOutputMessageDTO(
+                    call_id=message.call_id,
+                    output=message.output,
                 )
             )
     return LLMRequestDTO(messages=messages)

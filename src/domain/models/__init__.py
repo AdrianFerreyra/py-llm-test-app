@@ -1,5 +1,11 @@
 from .conversation import Conversation
-from .message import LLMMessage, LLMToolCallMessage, Message, UserMessage
+from .message import (
+    LLMMessage,
+    LLMToolCallMessage,
+    Message,
+    ToolCallOutputMessage,
+    UserMessage,
+)
 from .weather_info import WeatherInfo
 
 __all__ = [
@@ -7,6 +13,7 @@ __all__ = [
     "LLMMessage",
     "LLMToolCallMessage",
     "Message",
+    "ToolCallOutputMessage",
     "UserMessage",
     "WeatherInfo",
 ]

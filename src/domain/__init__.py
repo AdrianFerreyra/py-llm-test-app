@@ -3,6 +3,7 @@ from .models import (
     LLMMessage,
     LLMToolCallMessage,
     Message,
+    ToolCallOutputMessage,
     UserMessage,
     WeatherInfo,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "LLMMessage",
     "LLMToolCallMessage",
     "Message",
+    "ToolCallOutputMessage",
     "UserMessage",
     "WeatherInfo",
 ]

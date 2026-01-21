@@ -34,6 +34,7 @@ class TestLLMPort:
 
     def test_call_returns_tool_call_response_dto(self):
         response = LLMToolCallResponseDTO(
+            call_id="call_abc123",
             function_name="get_weather",
             arguments={"location": "London"},
         )
@@ -49,6 +50,7 @@ class TestLLMPort:
         result = adapter.call(request)
 
         assert isinstance(result, LLMToolCallResponseDTO)
+        assert result.call_id == "call_abc123"
         assert result.function_name == "get_weather"
         assert result.arguments == {"location": "London"}
         assert adapter.calls == [request]

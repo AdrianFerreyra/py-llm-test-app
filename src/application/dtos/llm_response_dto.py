@@ -13,5 +13,6 @@ class LLMMessageResponseDTO(LLMResponseDTO):
 
 @dataclass
 class LLMToolCallResponseDTO(LLMResponseDTO):
+    call_id: str
     function_name: str
     arguments: dict[str, str]

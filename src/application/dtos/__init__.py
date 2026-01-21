@@ -1,4 +1,9 @@
-from .llm_request_dto import LLMRequestDTO, LLMRequestMessageDTO
+from .llm_request_dto import (
+    LLMRequestDTO,
+    LLMRequestMessageDTO,
+    LLMToolCallMessageDTO,
+    LLMToolCallOutputMessageDTO,
+)
 from .llm_response_dto import (
     LLMMessageResponseDTO,
     LLMResponseDTO,
@@ -11,6 +16,8 @@ __all__ = [
     "LLMRequestDTO",
     "LLMRequestMessageDTO",
     "LLMResponseDTO",
+    "LLMToolCallMessageDTO",
+    "LLMToolCallOutputMessageDTO",
     "LLMToolCallResponseDTO",
     "WeatherDTO",
 ]
