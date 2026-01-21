@@ -1,9 +1,15 @@
+from collections.abc import AsyncIterator
+
+import pytest
+
 from src.application import ApplicationService
 from src.application.dtos import (
+    LLMCompleted,
+    LLMMessageChunk,
     LLMMessageResponseDTO,
     LLMRequestDTO,
     LLMRequestMessageDTO,
-    LLMResponseDTO,
+    LLMStreamEvent,
     LLMToolCallMessageDTO,
     LLMToolCallOutputMessageDTO,
     LLMToolCallResponseDTO,
@@ -35,14 +41,16 @@ class FakeOutputAdapter(OutputPort):
         self.messages.append(message)
 
 
-class FakeLLMAdapter(LLMPort):
-    def __init__(self, responses: list[LLMResponseDTO]):
+class FakeStreamingLLMAdapter(LLMPort):
+    def __init__(self, responses: list[list[LLMStreamEvent]]):
         self.responses = iter(responses)
         self.calls: list[LLMRequestDTO] = []
 
-    def call(self, request: LLMRequestDTO) -> LLMResponseDTO:
+    async def call(self, request: LLMRequestDTO) -> AsyncIterator[LLMStreamEvent]:
         self.calls.append(request)
-        return next(self.responses)
+        events = next(self.responses)
+        for event in events:
+            yield event
 
 
 class FakeWeatherAdapter(WeatherPort):
@@ -56,34 +64,21 @@ class FakeWeatherAdapter(WeatherPort):
 
 
 class TestApplicationServiceRun:
-    def test_run_calls_llm_port_with_request_dto_and_outputs_message(self):
+    @pytest.mark.asyncio
+    async def test_run_outputs_chunks_as_they_arrive(self):
+        """Each LLMMessageChunk should be written to output as it arrives."""
         fake_input = FakeInputAdapter(["Hello", "exit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter(
-            responses=[LLMMessageResponseDTO(message="Hi there!")]
-        )
-        app = ApplicationService(
-            input_port=fake_input,
-            output_port=fake_output,
-            llm_port=fake_llm,
-        )
-
-        app.run()
-
-        assert len(fake_llm.calls) == 1
-        assert isinstance(fake_llm.calls[0], LLMRequestDTO)
-        assert len(fake_llm.calls[0].messages) == 1
-        assert fake_llm.calls[0].messages[0].role == "user"
-        assert fake_llm.calls[0].messages[0].content == "Hello"
-        assert fake_output.messages == ["Hi there!"]
-
-    def test_run_sends_conversation_history_in_subsequent_calls(self):
-        fake_input = FakeInputAdapter(["Hello", "How are you?", "exit"])
-        fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter(
+        fake_llm = FakeStreamingLLMAdapter(
             responses=[
-                LLMMessageResponseDTO(message="I'm an AI assistant."),
-                LLMMessageResponseDTO(message="I'm doing well!"),
+                [
+                    LLMMessageChunk(content="Hi"),
+                    LLMMessageChunk(content=" there"),
+                    LLMMessageChunk(content="!"),
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(message="Hi there!")
+                    ),
+                ]
             ]
         )
         app = ApplicationService(
@@ -92,7 +87,65 @@ class TestApplicationServiceRun:
             llm_port=fake_llm,
         )
 
-        app.run()
+        await app.run()
+
+        # Each chunk should be written separately
+        assert fake_output.messages == ["Hi", " there", "!"]
+
+    @pytest.mark.asyncio
+    async def test_run_calls_llm_port_with_request_dto(self):
+        fake_input = FakeInputAdapter(["Hello", "exit"])
+        fake_output = FakeOutputAdapter()
+        fake_llm = FakeStreamingLLMAdapter(
+            responses=[
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(message="Hi there!")
+                    ),
+                ]
+            ]
+        )
+        app = ApplicationService(
+            input_port=fake_input,
+            output_port=fake_output,
+            llm_port=fake_llm,
+        )
+
+        await app.run()
+
+        assert len(fake_llm.calls) == 1
+        assert isinstance(fake_llm.calls[0], LLMRequestDTO)
+        assert len(fake_llm.calls[0].messages) == 1
+        assert fake_llm.calls[0].messages[0].role == "user"
+        assert fake_llm.calls[0].messages[0].content == "Hello"
+
+    @pytest.mark.asyncio
+    async def test_run_sends_conversation_history_in_subsequent_calls(self):
+        fake_input = FakeInputAdapter(["Hello", "How are you?", "exit"])
+        fake_output = FakeOutputAdapter()
+        fake_llm = FakeStreamingLLMAdapter(
+            responses=[
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(
+                            message="I'm an AI assistant."
+                        )
+                    ),
+                ],
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(message="I'm doing well!")
+                    ),
+                ],
+            ]
+        )
+        app = ApplicationService(
+            input_port=fake_input,
+            output_port=fake_output,
+            llm_port=fake_llm,
+        )
+
+        await app.run()
 
         assert len(fake_llm.calls) == 2
 
@@ -110,13 +163,22 @@ class TestApplicationServiceRun:
         assert fake_llm.calls[1].messages[2].role == "user"
         assert fake_llm.calls[1].messages[2].content == "How are you?"
 
-    def test_run_creates_conversation_with_user_and_llm_messages(self):
+    @pytest.mark.asyncio
+    async def test_run_creates_conversation_with_user_and_llm_messages(self):
         fake_input = FakeInputAdapter(["Hello", "How are you?", "exit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter(
+        fake_llm = FakeStreamingLLMAdapter(
             responses=[
-                LLMMessageResponseDTO(message="Response 1"),
-                LLMMessageResponseDTO(message="Response 2"),
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(message="Response 1")
+                    ),
+                ],
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(message="Response 2")
+                    ),
+                ],
             ]
         )
         app = ApplicationService(
@@ -125,7 +187,7 @@ class TestApplicationServiceRun:
             llm_port=fake_llm,
         )
 
-        app.run()
+        await app.run()
 
         assert app.conversation is not None
         assert isinstance(app.conversation, Conversation)
@@ -143,11 +205,18 @@ class TestApplicationServiceRun:
         assert isinstance(app.conversation.messages[3], LLMMessage)
         assert app.conversation.messages[3].content == "Response 2"
 
-    def test_run_exits_on_quit(self):
+    @pytest.mark.asyncio
+    async def test_run_exits_on_quit(self):
         fake_input = FakeInputAdapter(["Hello", "quit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter(
-            responses=[LLMMessageResponseDTO(message="Hi!")]
+        fake_llm = FakeStreamingLLMAdapter(
+            responses=[
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(message="Hi!")
+                    ),
+                ]
+            ]
         )
         app = ApplicationService(
             input_port=fake_input,
@@ -155,16 +224,22 @@ class TestApplicationServiceRun:
             llm_port=fake_llm,
         )
 
-        app.run()
+        await app.run()
 
         assert len(fake_llm.calls) == 1
-        assert len(fake_output.messages) == 1
 
-    def test_run_exits_on_q(self):
+    @pytest.mark.asyncio
+    async def test_run_exits_on_q(self):
         fake_input = FakeInputAdapter(["Hello", "q"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter(
-            responses=[LLMMessageResponseDTO(message="Hi!")]
+        fake_llm = FakeStreamingLLMAdapter(
+            responses=[
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(message="Hi!")
+                    ),
+                ]
+            ]
         )
         app = ApplicationService(
             input_port=fake_input,
@@ -172,22 +247,32 @@ class TestApplicationServiceRun:
             llm_port=fake_llm,
         )
 
-        app.run()
+        await app.run()
 
         assert len(fake_llm.calls) == 1
-        assert len(fake_output.messages) == 1
 
-    def test_run_calls_weather_port_when_llm_requests_get_current_weather(self):
+    @pytest.mark.asyncio
+    async def test_run_calls_weather_port_when_llm_requests_get_current_weather(self):
         fake_input = FakeInputAdapter(["What's the weather in London?", "exit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter(
+        fake_llm = FakeStreamingLLMAdapter(
             responses=[
-                LLMToolCallResponseDTO(
-                    call_id="call_weather_1",
-                    function_name="get_current_weather",
-                    arguments={"location": "London"},
-                ),
-                LLMMessageResponseDTO(message="The weather in London is sunny, 20°C."),
+                [
+                    LLMCompleted(
+                        final_response=LLMToolCallResponseDTO(
+                            call_id="call_weather_1",
+                            function_name="get_current_weather",
+                            arguments={"location": "London"},
+                        )
+                    ),
+                ],
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(
+                            message="The weather in London is sunny, 20°C."
+                        )
+                    ),
+                ],
             ]
         )
         fake_weather = FakeWeatherAdapter(
@@ -219,21 +304,32 @@ class TestApplicationServiceRun:
             weather_port=fake_weather,
         )
 
-        app.run()
+        await app.run()
 
         assert fake_weather.calls == ["London"]
 
-    def test_run_sends_tool_call_result_back_to_llm(self):
+    @pytest.mark.asyncio
+    async def test_run_sends_tool_call_result_back_to_llm(self):
         fake_input = FakeInputAdapter(["What's the weather in Paris?", "exit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter(
+        fake_llm = FakeStreamingLLMAdapter(
             responses=[
-                LLMToolCallResponseDTO(
-                    call_id="call_weather_2",
-                    function_name="get_current_weather",
-                    arguments={"location": "Paris"},
-                ),
-                LLMMessageResponseDTO(message="It's sunny in Paris!"),
+                [
+                    LLMCompleted(
+                        final_response=LLMToolCallResponseDTO(
+                            call_id="call_weather_2",
+                            function_name="get_current_weather",
+                            arguments={"location": "Paris"},
+                        )
+                    ),
+                ],
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(
+                            message="It's sunny in Paris!"
+                        )
+                    ),
+                ],
             ]
         )
         fake_weather = FakeWeatherAdapter(
@@ -265,7 +361,7 @@ class TestApplicationServiceRun:
             weather_port=fake_weather,
         )
 
-        app.run()
+        await app.run()
 
         # LLM should be called twice: first returns tool call, second returns message
         assert len(fake_llm.calls) == 2
@@ -286,17 +382,28 @@ class TestApplicationServiceRun:
         assert second_call.messages[2].output.temperature_c == 25.0
         assert second_call.messages[2].output.condition == "Sunny"
 
-    def test_run_appends_tool_call_and_output_to_conversation(self):
+    @pytest.mark.asyncio
+    async def test_run_appends_tool_call_and_output_to_conversation(self):
         fake_input = FakeInputAdapter(["Weather in Tokyo?", "exit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter(
+        fake_llm = FakeStreamingLLMAdapter(
             responses=[
-                LLMToolCallResponseDTO(
-                    call_id="call_weather_3",
-                    function_name="get_current_weather",
-                    arguments={"location": "Tokyo"},
-                ),
-                LLMMessageResponseDTO(message="Tokyo weather is nice!"),
+                [
+                    LLMCompleted(
+                        final_response=LLMToolCallResponseDTO(
+                            call_id="call_weather_3",
+                            function_name="get_current_weather",
+                            arguments={"location": "Tokyo"},
+                        )
+                    ),
+                ],
+                [
+                    LLMCompleted(
+                        final_response=LLMMessageResponseDTO(
+                            message="Tokyo weather is nice!"
+                        )
+                    ),
+                ],
             ]
         )
         fake_weather = FakeWeatherAdapter(
@@ -328,7 +435,7 @@ class TestApplicationServiceRun:
             weather_port=fake_weather,
         )
 
-        app.run()
+        await app.run()
 
         # Conversation should have: UserMessage, LLMToolCallMessage, ToolCallOutputMessage, LLMMessage
         assert len(app.conversation.messages) == 4

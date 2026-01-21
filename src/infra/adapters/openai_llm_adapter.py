@@ -1,12 +1,15 @@
 import dataclasses
 import json
+from collections.abc import AsyncIterator
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from src.application.dtos import (
+    LLMCompleted,
+    LLMMessageChunk,
     LLMMessageResponseDTO,
     LLMRequestDTO,
-    LLMResponseDTO,
+    LLMStreamEvent,
     LLMToolCallMessageDTO,
     LLMToolCallOutputMessageDTO,
     LLMToolCallResponseDTO,
@@ -36,9 +39,9 @@ class OpenAILLMAdapter(LLMPort):
     ]
 
     def __init__(self, api_key: str):
-        self.client = OpenAI(api_key=api_key)
+        self.client = AsyncOpenAI(api_key=api_key)
 
-    def call(self, request: LLMRequestDTO) -> LLMResponseDTO:
+    async def call(self, request: LLMRequestDTO) -> AsyncIterator[LLMStreamEvent]:
         messages = []
         for msg in request.messages:
             if isinstance(msg, LLMToolCallMessageDTO):
@@ -61,18 +64,29 @@ class OpenAILLMAdapter(LLMPort):
             else:
                 messages.append({"role": msg.role, "content": msg.content})
 
-        response = self.client.responses.create(
+        stream = await self.client.responses.create(
             model="gpt-4.1",
             input=messages,
             tools=self.available_tools,
+            stream=True,
         )
 
-        for output_item in response.output:
-            if output_item.type == "function_call":
-                return LLMToolCallResponseDTO(
-                    call_id=output_item.call_id,
-                    function_name=output_item.name,
-                    arguments=json.loads(output_item.arguments),
-                )
-
-        return LLMMessageResponseDTO(message=response.output_text)
+        async for event in stream:
+            if event.type == "response.output_text.delta":
+                yield LLMMessageChunk(content=event.delta)
+            elif event.type == "response.output_item.done":
+                if event.item.type == "function_call":
+                    yield LLMCompleted(
+                        final_response=LLMToolCallResponseDTO(
+                            call_id=event.item.call_id,
+                            function_name=event.item.name,
+                            arguments=json.loads(event.item.arguments),
+                        )
+                    )
+                elif event.item.type == "message":
+                    full_text = "".join(
+                        content.text for content in event.item.content
+                    )
+                    yield LLMCompleted(
+                        final_response=LLMMessageResponseDTO(message=full_text)
+                    )

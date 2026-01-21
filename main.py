@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from dotenv import load_dotenv
@@ -13,7 +14,7 @@ from src.infra import (
 load_dotenv()
 
 
-def main():
+async def main():
     input_adapter = StdInInputAdapter()
     output_adapter = StdOutOutputAdapter()
     llm_adapter = OpenAILLMAdapter(api_key=os.getenv("OPENAI_API_KEY"))
@@ -25,9 +26,8 @@ def main():
         weather_port=weather_adapter,
     )
 
-    app.run()
-
+    await app.run()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

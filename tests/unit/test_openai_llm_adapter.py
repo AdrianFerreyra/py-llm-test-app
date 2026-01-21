@@ -1,7 +1,11 @@
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from src.application.dtos import (
+    LLMCompleted,
+    LLMMessageChunk,
     LLMMessageResponseDTO,
     LLMRequestDTO,
     LLMRequestMessageDTO,
@@ -15,15 +19,22 @@ from src.infra.adapters.openai_llm_adapter import OpenAILLMAdapter
 
 
 class TestOpenAILLMAdapter:
-    def test_call_sends_messages_and_tools_to_openai(self):
-        mock_response = Mock()
-        mock_response.output = []
-        mock_response.output_text = "The weather in Paris is sunny and 15°C."
+    @pytest.mark.asyncio
+    async def test_call_sends_messages_and_tools_to_openai(self):
+        async def mock_stream():
+            done_event = Mock()
+            done_event.type = "response.output_item.done"
+            done_event.item = Mock()
+            done_event.item.type = "message"
+            done_event.item.content = [Mock(text="The weather in Paris is sunny and 15°C.")]
+            yield done_event
 
-        with patch("src.infra.adapters.openai_llm_adapter.OpenAI") as mock_openai_class:
-            mock_client = Mock()
+        with patch(
+            "src.infra.adapters.openai_llm_adapter.AsyncOpenAI"
+        ) as mock_openai_class:
+            mock_client = AsyncMock()
             mock_openai_class.return_value = mock_client
-            mock_client.responses.create.return_value = mock_response
+            mock_client.responses.create.return_value = mock_stream()
 
             adapter = OpenAILLMAdapter(api_key="test-api-key")
             request = LLMRequestDTO(
@@ -33,21 +44,22 @@ class TestOpenAILLMAdapter:
                     )
                 ]
             )
-            adapter.call(request)
 
-            mock_client.responses.create.assert_called_once_with(
-                model="gpt-4.1",
-                input=[
-                    {"role": "user", "content": "What is the weather like in Paris today?"},
-                ],
-                tools=OpenAILLMAdapter.available_tools,
-            )
+            events = []
+            async for event in adapter.call(request):
+                events.append(event)
 
-    def test_call_formats_tool_call_output_message_correctly(self):
-        mock_response = Mock()
-        mock_response.output = []
-        mock_response.output_text = "The weather in London is sunny!"
+            mock_client.responses.create.assert_called_once()
+            call_kwargs = mock_client.responses.create.call_args.kwargs
+            assert call_kwargs["model"] == "gpt-4.1"
+            assert call_kwargs["input"] == [
+                {"role": "user", "content": "What is the weather like in Paris today?"},
+            ]
+            assert call_kwargs["tools"] == OpenAILLMAdapter.available_tools
+            assert call_kwargs["stream"] is True
 
+    @pytest.mark.asyncio
+    async def test_call_formats_tool_call_output_message_correctly(self):
         weather = WeatherInfo(
             temperature_c=20.0,
             temperature_f=68.0,
@@ -69,10 +81,20 @@ class TestOpenAILLMAdapter:
             last_updated="2024-01-01 12:00",
         )
 
-        with patch("src.infra.adapters.openai_llm_adapter.OpenAI") as mock_openai_class:
-            mock_client = Mock()
+        async def mock_stream():
+            done_event = Mock()
+            done_event.type = "response.output_item.done"
+            done_event.item = Mock()
+            done_event.item.type = "message"
+            done_event.item.content = [Mock(text="The weather in London is sunny!")]
+            yield done_event
+
+        with patch(
+            "src.infra.adapters.openai_llm_adapter.AsyncOpenAI"
+        ) as mock_openai_class:
+            mock_client = AsyncMock()
             mock_openai_class.return_value = mock_client
-            mock_client.responses.create.return_value = mock_response
+            mock_client.responses.create.return_value = mock_stream()
 
             adapter = OpenAILLMAdapter(api_key="test-api-key")
             request = LLMRequestDTO(
@@ -86,7 +108,10 @@ class TestOpenAILLMAdapter:
                     ),
                 ]
             )
-            adapter.call(request)
+
+            events = []
+            async for event in adapter.call(request):
+                events.append(event)
 
             call_args = mock_client.responses.create.call_args
             input_messages = call_args.kwargs["input"]
@@ -102,69 +127,13 @@ class TestOpenAILLMAdapter:
             assert output_data["temperature_c"] == 20.0
             assert output_data["condition"] == "Sunny"
 
-    def test_call_returns_message_response_dto_for_text_response(self):
-        mock_response = Mock()
-        mock_response.output = []
-        mock_response.output_text = "The weather in Paris is sunny and 15°C."
-
-        with patch("src.infra.adapters.openai_llm_adapter.OpenAI") as mock_openai_class:
-            mock_client = Mock()
-            mock_openai_class.return_value = mock_client
-            mock_client.responses.create.return_value = mock_response
-
-            adapter = OpenAILLMAdapter(api_key="test-api-key")
-            request = LLMRequestDTO(
-                messages=[
-                    LLMRequestMessageDTO(
-                        role="user", content="What is the weather like in Paris today?"
-                    )
-                ]
-            )
-            result = adapter.call(request)
-
-            assert isinstance(result, LLMMessageResponseDTO)
-            assert result.message == "The weather in Paris is sunny and 15°C."
-
-    def test_call_returns_tool_call_response_dto_when_openai_requests_tool(self):
-        mock_function_call = Mock()
-        mock_function_call.type = "function_call"
-        mock_function_call.call_id = "call_abc123"
-        mock_function_call.name = "get_current_weather"
-        mock_function_call.arguments = '{"location": "London"}'
-
-        mock_response = Mock()
-        mock_response.output = [mock_function_call]
-
-        with patch("src.infra.adapters.openai_llm_adapter.OpenAI") as mock_openai_class:
-            mock_client = Mock()
-            mock_openai_class.return_value = mock_client
-            mock_client.responses.create.return_value = mock_response
-
-            adapter = OpenAILLMAdapter(api_key="test-api-key")
-            request = LLMRequestDTO(
-                messages=[
-                    LLMRequestMessageDTO(
-                        role="user", content="What's the weather in London?"
-                    )
-                ]
-            )
-            result = adapter.call(request)
-
-            assert isinstance(result, LLMToolCallResponseDTO)
-            assert result.call_id == "call_abc123"
-            assert result.function_name == "get_current_weather"
-            assert result.arguments == {"location": "London"}
-
-    def test_call_formats_tool_call_message_as_function_call(self):
+    @pytest.mark.asyncio
+    async def test_call_formats_tool_call_message_as_function_call(self):
         """
         When the conversation includes a tool call from the assistant,
         it must be formatted as a function_call object, not a text message.
         OpenAI requires this format when followed by a function_call_output.
         """
-        mock_response = Mock()
-        mock_response.output = []
-        mock_response.output_text = "The weather in London is sunny, 20°C!"
-
         weather = WeatherInfo(
             temperature_c=20.0,
             temperature_f=68.0,
@@ -186,10 +155,20 @@ class TestOpenAILLMAdapter:
             last_updated="2024-01-01 12:00",
         )
 
-        with patch("src.infra.adapters.openai_llm_adapter.OpenAI") as mock_openai_class:
-            mock_client = Mock()
+        async def mock_stream():
+            done_event = Mock()
+            done_event.type = "response.output_item.done"
+            done_event.item = Mock()
+            done_event.item.type = "message"
+            done_event.item.content = [Mock(text="The weather in London is sunny, 20°C!")]
+            yield done_event
+
+        with patch(
+            "src.infra.adapters.openai_llm_adapter.AsyncOpenAI"
+        ) as mock_openai_class:
+            mock_client = AsyncMock()
             mock_openai_class.return_value = mock_client
-            mock_client.responses.create.return_value = mock_response
+            mock_client.responses.create.return_value = mock_stream()
 
             adapter = OpenAILLMAdapter(api_key="test-api-key")
             # This is the conversation after a tool call:
@@ -212,7 +191,10 @@ class TestOpenAILLMAdapter:
                     ),
                 ]
             )
-            adapter.call(request)
+
+            events = []
+            async for event in adapter.call(request):
+                events.append(event)
 
             call_args = mock_client.responses.create.call_args
             input_messages = call_args.kwargs["input"]
@@ -236,6 +218,131 @@ class TestOpenAILLMAdapter:
             assert input_messages[2]["call_id"] == "call_abc123"
 
     def test_implements_llm_port(self):
-        with patch("src.infra.adapters.openai_llm_adapter.OpenAI"):
+        with patch("src.infra.adapters.openai_llm_adapter.AsyncOpenAI"):
             adapter = OpenAILLMAdapter(api_key="test-api-key")
             assert isinstance(adapter, LLMPort)
+
+
+class TestOpenAILLMAdapterStreaming:
+    @pytest.mark.asyncio
+    async def test_call_yields_message_chunks_from_stream(self):
+        """When OpenAI streams text deltas, adapter yields LLMMessageChunk events."""
+
+        async def mock_stream():
+            # Simulate streaming response with text deltas
+            delta1 = Mock()
+            delta1.type = "response.output_text.delta"
+            delta1.delta = "Hello"
+            yield delta1
+
+            delta2 = Mock()
+            delta2.type = "response.output_text.delta"
+            delta2.delta = ", world!"
+            yield delta2
+
+            # Final event when message is done
+            done_event = Mock()
+            done_event.type = "response.output_item.done"
+            done_event.item = Mock()
+            done_event.item.type = "message"
+            done_event.item.content = [Mock(text="Hello, world!")]
+            yield done_event
+
+        with patch(
+            "src.infra.adapters.openai_llm_adapter.AsyncOpenAI"
+        ) as mock_openai_class:
+            mock_client = AsyncMock()
+            mock_openai_class.return_value = mock_client
+            mock_client.responses.create.return_value = mock_stream()
+
+            adapter = OpenAILLMAdapter(api_key="test-api-key")
+            request = LLMRequestDTO(
+                messages=[LLMRequestMessageDTO(role="user", content="Hi")]
+            )
+
+            events = []
+            async for event in adapter.call(request):
+                events.append(event)
+
+            assert len(events) == 3
+            assert isinstance(events[0], LLMMessageChunk)
+            assert events[0].content == "Hello"
+            assert isinstance(events[1], LLMMessageChunk)
+            assert events[1].content == ", world!"
+            assert isinstance(events[2], LLMCompleted)
+            assert isinstance(events[2].final_response, LLMMessageResponseDTO)
+            assert events[2].final_response.message == "Hello, world!"
+
+    @pytest.mark.asyncio
+    async def test_call_yields_completed_with_tool_call_response(self):
+        """When OpenAI returns a tool call, adapter yields LLMCompleted with LLMToolCallResponseDTO."""
+
+        async def mock_stream():
+            # Tool call done event
+            done_event = Mock()
+            done_event.type = "response.output_item.done"
+            done_event.item = Mock()
+            done_event.item.type = "function_call"
+            done_event.item.call_id = "call_abc123"
+            done_event.item.name = "get_current_weather"
+            done_event.item.arguments = '{"location": "London"}'
+            yield done_event
+
+        with patch(
+            "src.infra.adapters.openai_llm_adapter.AsyncOpenAI"
+        ) as mock_openai_class:
+            mock_client = AsyncMock()
+            mock_openai_class.return_value = mock_client
+            mock_client.responses.create.return_value = mock_stream()
+
+            adapter = OpenAILLMAdapter(api_key="test-api-key")
+            request = LLMRequestDTO(
+                messages=[
+                    LLMRequestMessageDTO(
+                        role="user", content="What's the weather in London?"
+                    )
+                ]
+            )
+
+            events = []
+            async for event in adapter.call(request):
+                events.append(event)
+
+            assert len(events) == 1
+            assert isinstance(events[0], LLMCompleted)
+            assert isinstance(events[0].final_response, LLMToolCallResponseDTO)
+            assert events[0].final_response.call_id == "call_abc123"
+            assert events[0].final_response.function_name == "get_current_weather"
+            assert events[0].final_response.arguments == {"location": "London"}
+
+    @pytest.mark.asyncio
+    async def test_call_uses_streaming_api(self):
+        """Verifies that the adapter uses the streaming API with stream=True."""
+
+        async def mock_stream():
+            done_event = Mock()
+            done_event.type = "response.output_item.done"
+            done_event.item = Mock()
+            done_event.item.type = "message"
+            done_event.item.content = [Mock(text="Hi!")]
+            yield done_event
+
+        with patch(
+            "src.infra.adapters.openai_llm_adapter.AsyncOpenAI"
+        ) as mock_openai_class:
+            mock_client = AsyncMock()
+            mock_openai_class.return_value = mock_client
+            mock_client.responses.create.return_value = mock_stream()
+
+            adapter = OpenAILLMAdapter(api_key="test-api-key")
+            request = LLMRequestDTO(
+                messages=[LLMRequestMessageDTO(role="user", content="Hi")]
+            )
+
+            events = []
+            async for event in adapter.call(request):
+                events.append(event)
+
+            mock_client.responses.create.assert_called_once()
+            call_kwargs = mock_client.responses.create.call_args.kwargs
+            assert call_kwargs.get("stream") is True

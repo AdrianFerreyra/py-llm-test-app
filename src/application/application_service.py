@@ -1,4 +1,10 @@
-from src.application.dtos import LLMMessageResponseDTO, LLMToolCallResponseDTO
+from src.application.dtos import (
+    LLMCompleted,
+    LLMMessageChunk,
+    LLMMessageResponseDTO,
+    LLMResponseDTO,
+    LLMToolCallResponseDTO,
+)
 from src.application.ports import InputPort, LLMPort, OutputPort, WeatherPort
 from src.application.translators import (
     conversation_to_llm_request,
@@ -27,7 +33,7 @@ class ApplicationService:
         self.weather_port = weather_port
         self.conversation: Conversation | None = None
 
-    def run(self) -> None:
+    async def run(self) -> None:
         self.conversation = Conversation(messages=[])
 
         while True:
@@ -40,20 +46,25 @@ class ApplicationService:
 
             self.conversation.messages.append(UserMessage(content=message))
 
-            response = self._call_llm()
+            response = await self._call_llm()
 
             if isinstance(response, LLMToolCallResponseDTO):
-                response = self._handle_tool_call(response)
+                response = await self._handle_tool_call(response)
 
             if isinstance(response, LLMMessageResponseDTO):
                 self.conversation.messages.append(LLMMessage(content=response.message))
-                self.output_port.write(response.message)
 
-    def _call_llm(self):
+    async def _call_llm(self) -> LLMResponseDTO:
         request = conversation_to_llm_request(self.conversation)
-        return self.llm_port.call(request)
+        response = None
+        async for event in self.llm_port.call(request):
+            if isinstance(event, LLMMessageChunk):
+                self.output_port.write(event.content)
+            elif isinstance(event, LLMCompleted):
+                response = event.final_response
+        return response
 
-    def _handle_tool_call(self, response: LLMToolCallResponseDTO):
+    async def _handle_tool_call(self, response: LLMToolCallResponseDTO):
         self.conversation.messages.append(
             LLMToolCallMessage(
                 call_id=response.call_id,
@@ -72,4 +83,4 @@ class ApplicationService:
                 )
             )
 
-        return self._call_llm()
+        return await self._call_llm()
