@@ -37,7 +37,7 @@ class FakeOutputAdapter(OutputPort):
     def __init__(self):
         self.messages: list[str] = []
 
-    def write(self, message: str) -> None:
+    async def write(self, message: str) -> None:
         self.messages.append(message)
 
 

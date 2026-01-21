@@ -52,6 +52,7 @@ class ApplicationService:
                 response = await self._handle_tool_call(response)
 
             if isinstance(response, LLMMessageResponseDTO):
+                self.output_port.flush()
                 self.conversation.messages.append(LLMMessage(content=response.message))
 
     async def _call_llm(self) -> LLMResponseDTO:
@@ -59,7 +60,7 @@ class ApplicationService:
         response = None
         async for event in self.llm_port.call(request):
             if isinstance(event, LLMMessageChunk):
-                self.output_port.write(event.content)
+                await self.output_port.write(event.content)
             elif isinstance(event, LLMCompleted):
                 response = event.final_response
         return response
