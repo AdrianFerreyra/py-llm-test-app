@@ -1,5 +1,6 @@
 from src.application.dtos import LLMMessageResponseDTO
 from src.application.ports import InputPort, LLMPort, OutputPort, WeatherPort
+from src.application.translators import conversation_to_llm_request
 from src.domain import Conversation, LLMMessage, UserMessage
 
 
@@ -30,7 +31,8 @@ class ApplicationService:
 
             self.conversation.messages.append(UserMessage(content=message))
 
-            response = self.llm_port.call(message)
+            request = conversation_to_llm_request(self.conversation)
+            response = self.llm_port.call(request)
             if isinstance(response, LLMMessageResponseDTO):
                 self.conversation.messages.append(LLMMessage(content=response.message))
                 self.output_port.write(response.message)

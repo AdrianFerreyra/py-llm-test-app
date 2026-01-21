@@ -1,5 +1,10 @@
 from src.application import ApplicationService
-from src.application.dtos import LLMMessageResponseDTO, LLMResponseDTO
+from src.application.dtos import (
+    LLMMessageResponseDTO,
+    LLMRequestDTO,
+    LLMRequestMessageDTO,
+    LLMResponseDTO,
+)
 from src.application.ports import InputPort, LLMPort, OutputPort
 from src.domain import Conversation, LLMMessage, UserMessage
 
@@ -21,25 +26,22 @@ class FakeOutputAdapter(OutputPort):
 
 
 class FakeLLMAdapter(LLMPort):
-    def __init__(self, responses: dict[str, LLMResponseDTO]):
-        self.responses = responses
-        self.calls: list[str] = []
+    def __init__(self, response: LLMResponseDTO):
+        self.response = response
+        self.calls: list[LLMRequestDTO] = []
 
-    def call(self, message: str) -> LLMResponseDTO:
-        self.calls.append(message)
-        return self.responses.get(
-            message, LLMMessageResponseDTO(message="I don't understand.")
-        )
+    def call(self, request: LLMRequestDTO) -> LLMResponseDTO:
+        self.calls.append(request)
+        return self.response
 
 
 class TestApplicationServiceRun:
-    def test_run_calls_llm_port_with_user_input_and_outputs_message(self):
-        fake_input = FakeInputAdapter(["Hello", "How are you?", "exit"])
+    def test_run_calls_llm_port_with_request_dto_and_outputs_message(self):
+        fake_input = FakeInputAdapter(["Hello", "exit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter({
-            "Hello": LLMMessageResponseDTO(message="Hi there! How can I help you?"),
-            "How are you?": LLMMessageResponseDTO(message="I'm doing well, thank you!"),
-        })
+        fake_llm = FakeLLMAdapter(
+            response=LLMMessageResponseDTO(message="Hi there!")
+        )
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,
@@ -48,18 +50,49 @@ class TestApplicationServiceRun:
 
         app.run()
 
-        assert fake_llm.calls == ["Hello", "How are you?"]
-        assert len(fake_output.messages) == 2
-        assert fake_output.messages[0] == "Hi there! How can I help you?"
-        assert fake_output.messages[1] == "I'm doing well, thank you!"
+        assert len(fake_llm.calls) == 1
+        assert isinstance(fake_llm.calls[0], LLMRequestDTO)
+        assert len(fake_llm.calls[0].messages) == 1
+        assert fake_llm.calls[0].messages[0].role == "user"
+        assert fake_llm.calls[0].messages[0].content == "Hello"
+        assert fake_output.messages == ["Hi there!"]
+
+    def test_run_sends_conversation_history_in_subsequent_calls(self):
+        fake_input = FakeInputAdapter(["Hello", "How are you?", "exit"])
+        fake_output = FakeOutputAdapter()
+        fake_llm = FakeLLMAdapter(
+            response=LLMMessageResponseDTO(message="I'm an AI assistant.")
+        )
+        app = ApplicationService(
+            input_port=fake_input,
+            output_port=fake_output,
+            llm_port=fake_llm,
+        )
+
+        app.run()
+
+        assert len(fake_llm.calls) == 2
+
+        # First call: just the first user message
+        assert len(fake_llm.calls[0].messages) == 1
+        assert fake_llm.calls[0].messages[0].role == "user"
+        assert fake_llm.calls[0].messages[0].content == "Hello"
+
+        # Second call: full conversation history
+        assert len(fake_llm.calls[1].messages) == 3
+        assert fake_llm.calls[1].messages[0].role == "user"
+        assert fake_llm.calls[1].messages[0].content == "Hello"
+        assert fake_llm.calls[1].messages[1].role == "assistant"
+        assert fake_llm.calls[1].messages[1].content == "I'm an AI assistant."
+        assert fake_llm.calls[1].messages[2].role == "user"
+        assert fake_llm.calls[1].messages[2].content == "How are you?"
 
     def test_run_creates_conversation_with_user_and_llm_messages(self):
         fake_input = FakeInputAdapter(["Hello", "How are you?", "exit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter({
-            "Hello": LLMMessageResponseDTO(message="Hi there!"),
-            "How are you?": LLMMessageResponseDTO(message="I'm well!"),
-        })
+        fake_llm = FakeLLMAdapter(
+            response=LLMMessageResponseDTO(message="Response")
+        )
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,
@@ -76,20 +109,20 @@ class TestApplicationServiceRun:
         assert app.conversation.messages[0].content == "Hello"
 
         assert isinstance(app.conversation.messages[1], LLMMessage)
-        assert app.conversation.messages[1].content == "Hi there!"
+        assert app.conversation.messages[1].content == "Response"
 
         assert isinstance(app.conversation.messages[2], UserMessage)
         assert app.conversation.messages[2].content == "How are you?"
 
         assert isinstance(app.conversation.messages[3], LLMMessage)
-        assert app.conversation.messages[3].content == "I'm well!"
+        assert app.conversation.messages[3].content == "Response"
 
     def test_run_exits_on_quit(self):
         fake_input = FakeInputAdapter(["Hello", "quit"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter({
-            "Hello": LLMMessageResponseDTO(message="Hi!"),
-        })
+        fake_llm = FakeLLMAdapter(
+            response=LLMMessageResponseDTO(message="Hi!")
+        )
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,
@@ -98,15 +131,15 @@ class TestApplicationServiceRun:
 
         app.run()
 
-        assert fake_llm.calls == ["Hello"]
+        assert len(fake_llm.calls) == 1
         assert len(fake_output.messages) == 1
 
     def test_run_exits_on_q(self):
         fake_input = FakeInputAdapter(["Hello", "q"])
         fake_output = FakeOutputAdapter()
-        fake_llm = FakeLLMAdapter({
-            "Hello": LLMMessageResponseDTO(message="Hi!"),
-        })
+        fake_llm = FakeLLMAdapter(
+            response=LLMMessageResponseDTO(message="Hi!")
+        )
         app = ApplicationService(
             input_port=fake_input,
             output_port=fake_output,
@@ -115,5 +148,5 @@ class TestApplicationServiceRun:
 
         app.run()
 
-        assert fake_llm.calls == ["Hello"]
+        assert len(fake_llm.calls) == 1
         assert len(fake_output.messages) == 1
