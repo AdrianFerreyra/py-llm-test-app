@@ -40,6 +40,9 @@ class FakeOutputAdapter(OutputPort):
     async def write(self, message: str) -> None:
         self.messages.append(message)
 
+    def flush(self) -> None:
+        pass
+
 
 class FakeStreamingLLMAdapter(LLMPort):
     def __init__(self, responses: list[list[LLMStreamEvent]]):
